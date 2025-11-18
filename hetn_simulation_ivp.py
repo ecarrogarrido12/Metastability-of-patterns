@@ -7,7 +7,7 @@ from matplotlib.ticker import MaxNLocator
 
 # Type of test
 ic = 'tanh'
-heterogeneity = 'sech'
+heterogeneity = 'random'
 
 # Seed for the random heterogeneity
 seed = 42
@@ -16,13 +16,15 @@ seed = 42
 mu = 0.1
 gamma = 0.01
 x0 = -5
+delta = 0.5
 
 # Numerical parameters
 L = 10.0
 N = 500
 h = 2 * L / N
-T = 1000.0
-t_steps = 10000
+T = 500.0
+t_steps = 5000
+paths = 1
 
 
 # Set initial condition
@@ -34,11 +36,8 @@ def u0(x):
 
 # Set heterogeneity
 def S(x):
-    np.random.seed(seed)
-    if heterogeneity == 'periodic': return np.sin(np.pi * x)
-    if heterogeneity == 'random': return np.random.normal(loc=0.0, scale=1.0, size=len(x))
-    if heterogeneity == 'sech': return np.sqrt(1 - np.tanh((x - x0)) ** 2)
-    return np.zeros_like(x)
+    indicator = np.logical_and(x >= x0 - delta, x <= x0 + delta).astype(float)
+    return np.abs(np.random.normal(loc=0.0, scale=1.0, size=len(x)))*indicator
 
 
 # Physical function
@@ -57,14 +56,14 @@ def plot_heterogeneity(x, S_vals):
     ax.set_xlim(-10, 10)
     ax.set_ylim(-5, 5)
     ax.set_xlabel(r'$x$', fontsize=18)
-    ax.set_ylabel(r'$S(x)$', fontsize=18)
+    ax.set_ylabel(r'$s(x,w)$', fontsize=18)
     ax.tick_params(axis='both', labelsize=12)
     ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     plt.savefig('Plots//' + heterogeneity + '.png')
 
 
-def plot_simulation(x, sol):
+def plot_simulation(x, t, sol):
     boundaries = [-1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0]
     cmap = ListedColormap([
         '#ffffff',  # white
@@ -78,8 +77,8 @@ def plot_simulation(x, sol):
     norm = BoundaryNorm(boundaries, cmap.N)
     fig2, ax = plt.subplots(figsize=(9.5, 5))
     im = ax.imshow(
-        sol.y.T,
-        extent=[x[0], x[-1], sol.t[0], sol.t[-1]],
+        sol.T,
+        extent=(x[0], x[-1], t[0], t[-1]),
         aspect='auto',
         cmap=cmap,
         norm=norm,
@@ -90,20 +89,19 @@ def plot_simulation(x, sol):
     ax.tick_params(axis='both', labelsize=12)
     ax.set_xlabel(r'$x$', fontsize=18)
     ax.set_ylabel(r'$t$', fontsize=18)
-    ax.axvline(x=-4.3820971947072636, color='black', linestyle='--', label=r'$\phi_u^* = -4.382$')
-    ax.axvline(x=-2.072957588537433, color='blue', linestyle='--', label=r'$\phi_s^* = -2.072$')
     cbar = fig2.colorbar(im, ax=ax, ticks=boundaries)
     cbar.ax.tick_params(labelsize=12)
-    cbar.set_label(r'$u(x, t)$', fontsize=18)
+    cbar.set_label(r'$\mathbb{E}[U(x, t)]$', fontsize=18)
     simulation = 'Plots//HeN_' + ic + '_' + heterogeneity + '_stable.png'
-    ax.legend(fontsize=18)
     plt.savefig(simulation, dpi=300)
 
 
 def main():
+    np.random.seed(seed)
     # Data structures
     x = np.linspace(-L, L, N + 1)
-    S_vals = S(x)
+    t = np.linspace(0, T, t_steps)  # Time mesh
+    U = np.zeros([N + 1, t_steps, paths])
     main_diag = -2.0 * np.ones(N + 1)
     below_diag = 1.0 * np.ones(N)
     upper_diag = np.copy(below_diag)
@@ -114,18 +112,23 @@ def main():
                offsets=[-1, 0, 1],
                shape=(N + 1, N + 1),
                format='csr') * (1 / h ** 2)
+    plot_heterogeneity(x, S(x))
 
-    # Solve PDE using Method of lines and Radau
-    sol = solve_ivp(fun=rhs,
+    # Solve PDE using Method of lines and Radau per possible heterogeneity
+    for w in range(paths):
+        U[:, :, w] = solve_ivp(fun=rhs,
                     t_span=(0, T),
                     y0=u0(x),
                     method='Radau',
                     t_eval=np.linspace(*(0, T), t_steps),
-                    args=(Ah, S_vals))
+                    args=(Ah, S(x))).y
 
-    # Plots heterogeneity
-    plot_heterogeneity(x, S_vals)
-    plot_simulation(x, sol)
+    # Compute expected value of U(x, t)
+    avg_U = np.zeros([N + 1, t_steps])
+    for i in range(N + 1):
+        for j in range(t_steps):
+            avg_U[i, j] = np.mean(U[i, j, :])
+    plot_simulation(x, t, avg_U)
 
 
 if __name__ == '__main__':

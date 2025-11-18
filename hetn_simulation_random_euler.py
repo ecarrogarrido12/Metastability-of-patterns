@@ -17,9 +17,9 @@ from matplotlib.ticker import MaxNLocator
 
 # Physical parameters
 gamma = 0.01
-mu = 5
+mu = 0.1
 x0 = -5
-delta = 0.5
+delta = 0.1
 
 # Numerical parameters
 L = 10.0
@@ -30,6 +30,7 @@ t_steps = 1000 # Time steps per step. This is added for memory efficiency.
 dt = h**2 / 3
 T = dt * steps * t_steps
 paths = 500
+seed = 42
 
 # Set initial condition
 def U0(x):
@@ -50,12 +51,13 @@ def solve_ivp(u, Ah, indicator):
         for w in range(paths):
             u_w = u[:, w]; Z_iw = Z[:, i, w] # Storage for efficiency
             u[:, w] = u_w + dt * (Ah @ u_w - u_w ** 3 + u_w + gamma) \
-                             + mu * u_w * indicator * np.power(dt, 0.5) * Z_iw # Euler step
+                             + mu * u_w * indicator * np.power(dt, 0.5) * Z_iw
     return u
 
 
 def main():
     # Data structures
+    np.random.seed(42)
     main_diag = -2.0 * np.ones(N + 1)
     below_diag = 1.0 * np.ones(N)
     below_diag[-1] = 2.0
